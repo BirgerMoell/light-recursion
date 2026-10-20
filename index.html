@@ -111,7 +111,22 @@
   // --- gapless sound ---
   // <video loop> always hiccups at the wrap, so the sound is a separate Web Audio buffer that loops sample-exact
   // (the file already crossfades its end into its start). The video follows the audio clock.
-  let actx, buf, src, gain, t0 = 0, off = 0, loading = false, soundOn = false;
+  let actx, buf, src, gain, t0 = 0, off = 0, loading = false, soundOn = false, pendingSound = false;
+  const hintEl = $('.hint');
+  const hint = t => { if (t) { hintEl.textContent = t; hintEl.style.opacity = .85; } else { hintEl.textContent = 'move your pointer to change the depth'; hintEl.style.opacity = ''; } };
+
+  // --- remembered page state (sound, recursion mode, depth, code panel, nesting level, position in the loop) ---
+  const KEY = 'recursion-state-v1';
+  let level = 0;
+  const save = () => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({
+        sound: soundOn || pendingSound, deep: deepMode, depth: targetDepth,
+        code: document.body.classList.contains('show-code'), level, t: v.currentTime || 0, at: Date.now(),
+      }));
+    } catch (e) {}
+  };
+  const saved = (() => { try { const o = JSON.parse(localStorage.getItem(KEY) || 'null'); return o && Date.now() - o.at < 1000 * 60 * 60 * 24 * 14 ? o : null; } catch (e) { return null; } })();
   const sbtn = $('#sound');
   const label = (t, on) => { sbtn.textContent = t; sbtn.setAttribute('aria-pressed', String(!!on)); };
   const audioPos = () => (off + (actx.currentTime - t0)) % buf.duration;
@@ -127,27 +142,35 @@
     gain.gain.setValueAtTime(0, actx.currentTime);
     gain.gain.linearRampToValueAtTime(.9, t0 + .3);
   };
+  const prepare = async () => {                // create the context and decode the loop (no gesture needed for this part)
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!buf) {
+      loading = true; label('loading…', false);
+      const ab = await (await fetch('loop_audio.wav')).arrayBuffer();
+      buf = await actx.decodeAudioData(ab);
+      gain = actx.createGain(); gain.connect(actx.destination);
+      loading = false;
+    }
+  };
+  const soundOnNow = async () => {
+    try {
+      await prepare();
+      if (actx.state !== 'running') await actx.resume();
+      if (actx.state !== 'running') return false;   // still blocked: needs a gesture
+      v.play().catch(() => {});
+      startAudio(); soundOn = true; label('sound on', true); save();
+      return true;
+    } catch (err) { loading = false; label('sound off', false); console.warn('audio failed', err); return false; }
+  };
+  const soundOffNow = () => {
+    soundOn = false; label('sound off', false); save();
+    if (gain) gain.gain.setTargetAtTime(0, actx.currentTime, .05);
+    setTimeout(() => { if (!soundOn && src) { try { src.stop(); } catch (e) {} } }, 400);
+  };
   sbtn.onclick = async () => {
     if (loading) return;
-    if (soundOn) {                       // turn off
-      soundOn = false; label('sound off', false);
-      gain.gain.setTargetAtTime(0, actx.currentTime, .05);
-      setTimeout(() => { if (!soundOn && src) { try { src.stop(); } catch (e) {} } }, 400);
-      return;
-    }
-    try {
-      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
-      if (actx.state === 'suspended') await actx.resume();
-      if (!buf) {
-        loading = true; label('loading…', false);
-        const ab = await (await fetch('loop_audio.wav')).arrayBuffer();
-        buf = await actx.decodeAudioData(ab);
-        gain = actx.createGain(); gain.connect(actx.destination);
-        loading = false;
-      }
-      v.play().catch(() => {});
-      startAudio(); soundOn = true; label('sound on', true);
-    } catch (err) { loading = false; label('sound off', false); console.warn('audio failed', err); }
+    pendingSound = false; hint('');
+    if (soundOn) soundOffNow(); else await soundOnNow();
   };
   // keep the video locked to the audio clock (wrap-aware); the audio never moves, the picture catches up
   setInterval(() => {
@@ -163,6 +186,7 @@
   $('#code').onclick = e => {
     const on = document.body.classList.toggle('show-code');
     e.currentTarget.setAttribute('aria-pressed', String(on));
+    save();
   };
   $('#deep').onclick = e => {
     deepMode = !deepMode;
@@ -170,8 +194,25 @@
     e.currentTarget.textContent = deepMode ? 'leave the recursion' : 'enter the recursion';
     e.currentTarget.setAttribute('aria-pressed', String(deepMode));
     if (deepMode) { resize(); loop(); } else cancelAnimationFrame(raf);
+    save();
   };
-  $('#selflink').onclick = e => { e.preventDefault(); location.reload(); }; // see: recursion
+  // see: recursion unfolds the sentence inside itself, in place (no reload, so sound and position survive)
+  const foot = $('.foot');
+  const SENT = 'a looping music video about recursion. to understand it, ';
+  const see = n => n <= 0 ? '<a href="./" data-see>see: recursion</a>' : `<span style="font-size:.95em">${SENT}${see(n - 1)}</span>`;
+  const renderFoot = () => { foot.innerHTML = SENT + see(level) + '.'; };
+  foot.addEventListener('click', e => {
+    if (!e.target.closest('[data-see]')) return;
+    e.preventDefault();
+    level++;
+    if (level > 6) {                          // the stack runs out: the joke resets itself
+      foot.innerHTML = '<span style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.05em">RangeError: Maximum call stack size exceeded</span>';
+      level = 0; save();
+      setTimeout(renderFoot, 2600);
+      return;
+    }
+    renderFoot(); save();
+  });
 
   // --- the tab title recurses along with the song ---
   const syncStack = () => {
@@ -227,12 +268,43 @@
   const move = (x, y) => { tx = x / innerWidth; ty = y / innerHeight; targetDepth = 1 + 7 * tx; };
   addEventListener('pointermove', e => move(e.clientX, e.clientY));
   addEventListener('pointerdown', e => move(e.clientX, e.clientY));
+  addEventListener('pointerup', () => save());
   addEventListener('keydown', e => {
-    if (e.key === 'ArrowRight') targetDepth = Math.min(8, targetDepth + 1);
-    if (e.key === 'ArrowLeft') targetDepth = Math.max(1, targetDepth - 1);
+    if (e.key === 'ArrowRight') { targetDepth = Math.min(8, targetDepth + 1); save(); }
+    if (e.key === 'ArrowLeft') { targetDepth = Math.max(1, targetDepth - 1); save(); }
     if (e.key === ' ') { e.preventDefault(); if (v.paused) { v.play(); if (soundOn) { actx.resume(); startAudio(); } } else { v.pause(); if (soundOn) actx.suspend(); } }
     if (e.key.toLowerCase() === 'd') $('#deep').click();
   });
+
+  // --- restore what the visitor had last time ---
+  renderFoot();
+  if (saved) {
+    level = Math.min(6, saved.level | 0); renderFoot();
+    if (saved.code) { document.body.classList.add('show-code'); $('#code').setAttribute('aria-pressed', 'true'); }
+    targetDepth = depth = saved.depth || 5;
+    if (saved.deep) $('#deep').click();
+    const seek = () => { if (saved.t && v.duration && saved.t < v.duration) { try { v.currentTime = saved.t; } catch (e) {} } };
+    if (v.readyState >= 1) seek(); else v.addEventListener('loadedmetadata', seek, { once: true });
+    if (saved.sound) {
+      // browsers only let sound start after a gesture, so after a reload we start it on the first tap or key press
+      pendingSound = true; label('tap to resume sound', false); hint('tap anywhere to bring the sound back');
+      prepare().then(async () => {
+        if (!pendingSound) return;
+        label('tap to resume sound', false);
+        if (actx.state === 'running') { if (await soundOnNow()) { pendingSound = false; hint(''); } return; }
+        const evs = ['pointerdown', 'keydown', 'touchend'];
+        const h = async e => {
+          if (!pendingSound) { evs.forEach(n => removeEventListener(n, h, true)); return; }
+          if (e.target && e.target.closest && e.target.closest('#sound')) return;   // the button handles its own click
+          if (await soundOnNow()) { pendingSound = false; hint(''); evs.forEach(n => removeEventListener(n, h, true)); }
+        };
+        evs.forEach(n => addEventListener(n, h, true));
+      });
+    }
+  }
+  setInterval(save, 2000);
+  addEventListener('pagehide', save);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
 })();
 </script>
 </body>
