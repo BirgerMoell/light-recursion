@@ -44,7 +44,7 @@
   .code{position:fixed;right:26px;top:74px;max-width:min(520px,calc(100vw - 52px));background:var(--panel);border:1.5px solid var(--ink-soft);
     border-radius:14px;padding:16px 20px;font:13px/1.55 ui-monospace,Menlo,Consolas,monospace;white-space:pre;overflow:auto;
     transform-origin:top right;transition:opacity .3s,transform .3s;opacity:0;transform:scale(.96);pointer-events:none}
-  body.code .code{opacity:1;transform:none;pointer-events:auto}
+  body.show-code .code{opacity:1;transform:none;pointer-events:auto}
   .code em{font-style:normal;color:#c27c4a} .code i{font-style:normal;opacity:.55}
   a{color:inherit;text-underline-offset:5px;text-decoration-thickness:1px;pointer-events:auto}
   .foot{font-size:13px;letter-spacing:.2em;max-width:60ch;line-height:1.7;opacity:.85}
@@ -103,7 +103,7 @@
     e.currentTarget.setAttribute('aria-pressed', String(!v.muted));
   };
   $('#code').onclick = e => {
-    const on = document.body.classList.toggle('code');
+    const on = document.body.classList.toggle('show-code');
     e.currentTarget.setAttribute('aria-pressed', String(on));
   };
   $('#deep').onclick = e => {
