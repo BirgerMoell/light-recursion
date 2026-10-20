@@ -55,10 +55,10 @@
 </style>
 </head>
 <body>
-<video id="v" src="light_recursion.mp4" poster="poster.jpg" autoplay muted loop playsinline preload="auto"></video>
+<video id="v" src="loop_video.mp4" poster="poster.jpg" autoplay muted loop playsinline preload="auto"></video>
 <canvas id="c"></canvas>
 
-<div class="title">recursion<small>a song that sings itself</small></div>
+
 
 <div class="hud top">
   <div></div>
@@ -97,11 +97,58 @@
   v.addEventListener('playing', () => setTimeout(start, 600));
   start();
 
-  $('#sound').onclick = e => {
-    v.muted = !v.muted; if (!v.muted) v.volume = .9; v.play();
-    e.currentTarget.textContent = v.muted ? 'sound off' : 'sound on';
-    e.currentTarget.setAttribute('aria-pressed', String(!v.muted));
+  // --- gapless sound ---
+  // <video loop> always hiccups at the wrap, so the sound is a separate Web Audio buffer that loops sample-exact
+  // (the file already crossfades its end into its start). The video follows the audio clock.
+  let actx, buf, src, gain, t0 = 0, off = 0, loading = false, soundOn = false;
+  const sbtn = $('#sound');
+  const label = (t, on) => { sbtn.textContent = t; sbtn.setAttribute('aria-pressed', String(!!on)); };
+  const audioPos = () => (off + (actx.currentTime - t0)) % buf.duration;
+  const startAudio = () => {
+    if (src) { try { src.stop(); } catch (e) {} }
+    src = actx.createBufferSource();
+    src.buffer = buf; src.loop = true;
+    src.connect(gain);
+    off = (v.currentTime || 0) % buf.duration;
+    t0 = actx.currentTime + 0.05;
+    src.start(t0, off);
+    gain.gain.cancelScheduledValues(0);
+    gain.gain.setValueAtTime(0, actx.currentTime);
+    gain.gain.linearRampToValueAtTime(.9, t0 + .3);
   };
+  sbtn.onclick = async () => {
+    if (loading) return;
+    if (soundOn) {                       // turn off
+      soundOn = false; label('sound off', false);
+      gain.gain.setTargetAtTime(0, actx.currentTime, .05);
+      setTimeout(() => { if (!soundOn && src) { try { src.stop(); } catch (e) {} } }, 400);
+      return;
+    }
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === 'suspended') await actx.resume();
+      if (!buf) {
+        loading = true; label('loading…', false);
+        const ab = await (await fetch('loop_audio.wav')).arrayBuffer();
+        buf = await actx.decodeAudioData(ab);
+        gain = actx.createGain(); gain.connect(actx.destination);
+        loading = false;
+      }
+      v.play().catch(() => {});
+      startAudio(); soundOn = true; label('sound on', true);
+    } catch (err) { loading = false; label('sound off', false); console.warn('audio failed', err); }
+  };
+  // keep the video locked to the audio clock (wrap-aware); the audio never moves, the picture catches up
+  setInterval(() => {
+    if (!soundOn || !buf || v.seeking || v.paused) return;
+    const a = audioPos(), d = buf.duration;
+    let diff = v.currentTime - a;
+    if (diff > d / 2) diff -= d; else if (diff < -d / 2) diff += d;
+    if (Math.abs(diff) > .12) v.currentTime = a;
+  }, 500);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && soundOn) startAudio(); });
+  window.__seek = t => { v.currentTime = t; if (soundOn) startAudio(); };
+  window.__sync = () => soundOn ? { audio: audioPos(), video: v.currentTime, dur: buf.duration } : null;
   $('#code').onclick = e => {
     const on = document.body.classList.toggle('show-code');
     e.currentTarget.setAttribute('aria-pressed', String(on));
@@ -172,7 +219,7 @@
   addEventListener('keydown', e => {
     if (e.key === 'ArrowRight') targetDepth = Math.min(8, targetDepth + 1);
     if (e.key === 'ArrowLeft') targetDepth = Math.max(1, targetDepth - 1);
-    if (e.key === ' ') { e.preventDefault(); v.paused ? v.play() : v.pause(); }
+    if (e.key === ' ') { e.preventDefault(); if (v.paused) { v.play(); if (soundOn) { actx.resume(); startAudio(); } } else { v.pause(); if (soundOn) actx.suspend(); } }
     if (e.key.toLowerCase() === 'd') $('#deep').click();
   });
 })();
