@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>recursion</title>
+<meta name="description" content="A looping, recursive music video. To understand recursion, see: recursion.">
+<meta property="og:title" content="recursion">
+<meta property="og:description" content="A looping, recursive music video. To understand recursion, see: recursion.">
+<meta property="og:image" content="https://birgermoell.github.io/light-recursion/poster.jpg">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  :root{
+    --paper:#f7f0e4; --ink:#3b4a5c; --ink-soft:rgba(59,74,92,.55); --panel:rgba(255,252,246,.86);
+    --sage:#8cccb8; --sky:#78aed6; --peach:#f5b88f; --lav:#b89ee6;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --paper:#10161d; --ink:#e8eef5; --ink-soft:rgba(232,238,245,.6); --panel:rgba(20,28,38,.82); }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--paper);color:var(--ink);
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-weight:300;overflow:hidden}
+  video,canvas{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+  video{opacity:1}
+  body.deep video{opacity:0;pointer-events:none}
+  canvas{opacity:0;transition:opacity .8s ease}
+  body.deep canvas{opacity:1}
+
+  .hud{position:fixed;left:0;right:0;pointer-events:none;display:flex;justify-content:space-between;padding:22px 26px;gap:16px}
+  .top{top:0}.bottom{bottom:0;align-items:flex-end}
+  .chip,.btn{pointer-events:auto;background:var(--panel);border:1.5px solid var(--ink-soft);border-radius:14px;
+    color:var(--ink);padding:10px 18px;font:inherit;font-size:15px;letter-spacing:.12em;backdrop-filter:blur(6px)}
+  .btn{cursor:pointer;transition:transform .2s ease, background .2s ease}
+  .btn:hover{transform:translateY(-2px)} .btn[aria-pressed="true"]{background:var(--sage);color:#223}
+  .stack{font-size:13px;line-height:1.55;letter-spacing:.14em;min-width:170px;opacity:.95}
+  .stack b{font-weight:400;opacity:.6;display:block;margin-bottom:4px;font-size:11px;letter-spacing:.28em}
+  .stack div{opacity:.9}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+  .title{position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);font-weight:200;letter-spacing:.9em;
+    font-size:clamp(30px,6.5vw,92px);padding-left:.9em;pointer-events:none;transition:opacity 2.5s ease 1.5s;opacity:1;white-space:nowrap}
+  body.started .title{opacity:0}
+  .title small{display:block;font-size:.3em;letter-spacing:.35em;margin-top:.9em;opacity:.7;padding-left:.35em}
+  .code{position:fixed;right:26px;top:74px;max-width:min(520px,calc(100vw - 52px));background:var(--panel);border:1.5px solid var(--ink-soft);
+    border-radius:14px;padding:16px 20px;font:13px/1.55 ui-monospace,Menlo,Consolas,monospace;white-space:pre;overflow:auto;
+    transform-origin:top right;transition:opacity .3s,transform .3s;opacity:0;transform:scale(.96);pointer-events:none}
+  body.code .code{opacity:1;transform:none;pointer-events:auto}
+  .code em{font-style:normal;color:#c27c4a} .code i{font-style:normal;opacity:.55}
+  a{color:inherit;text-underline-offset:5px;text-decoration-thickness:1px;pointer-events:auto}
+  .foot{font-size:13px;letter-spacing:.2em;max-width:60ch;line-height:1.7;opacity:.85}
+  .hint{position:fixed;left:50%;top:30px;transform:translateX(-50%);font-size:13px;letter-spacing:.25em;opacity:0;transition:opacity 1s;pointer-events:none;white-space:nowrap}
+  body.deep .hint{opacity:.8}
+  @media (max-width:640px){.stack{display:none}.chip,.btn{padding:9px 13px;font-size:13px}.foot{font-size:11px}.hud{padding:14px}}
+  @media (prefers-reduced-motion: reduce){canvas{transition:none}}
+</style>
+</head>
+<body>
+<video id="v" src="light_recursion.mp4" poster="poster.jpg" autoplay muted loop playsinline preload="auto"></video>
+<canvas id="c"></canvas>
+
+<div class="title">recursion<small>a song that sings itself</small></div>
+
+<div class="hud top">
+  <div></div>
+  <div class="controls">
+    <button class="btn" id="sound" aria-pressed="false">sound off</button>
+    <button class="btn" id="deep" aria-pressed="false">enter the recursion</button>
+    <button class="btn" id="code" aria-pressed="false">&lt;/&gt;</button>
+  </div>
+</div>
+
+<pre class="code" id="codebox"><i>// this is what the page does when you enter it</i>
+<em>function</em> room(level, size) {
+  <em>if</em> (level === 0) <em>return</em>;        <i>// base case</i>
+  drawVideo(size);               <i>// the room</i>
+  <em>const</em> mirror = size * 0.58;  <i>// a smaller room</i>
+  turn(level * 7);
+  room(level - 1, mirror);       <i>// ...in the mirror</i>
+}
+<i>// move your pointer: left = shallow, right = deep</i></pre>
+
+<div class="hint">move your pointer to change the depth</div>
+
+<div class="hud bottom">
+  <div class="foot">a looping music video about recursion. to understand it, <a href="" id="selflink">see: recursion</a>.</div>
+</div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const v = $('#v'), c = $('#c'), ctx = c.getContext('2d');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let deepMode = false, depth = 5, targetDepth = 5, twist = 0, tx = .5, ty = .5, cx = .5, cy = .5, raf;
+
+  // --- start: autoplay muted is always allowed; sound needs a click ---
+  const start = () => { v.play().catch(()=>{}); document.body.classList.add('started'); };
+  v.addEventListener('playing', () => setTimeout(start, 600));
+  start();
+
+  $('#sound').onclick = e => {
+    v.muted = !v.muted; if (!v.muted) v.volume = .9; v.play();
+    e.currentTarget.textContent = v.muted ? 'sound off' : 'sound on';
+    e.currentTarget.setAttribute('aria-pressed', String(!v.muted));
+  };
+  $('#code').onclick = e => {
+    const on = document.body.classList.toggle('code');
+    e.currentTarget.setAttribute('aria-pressed', String(on));
+  };
+  $('#deep').onclick = e => {
+    deepMode = !deepMode;
+    document.body.classList.toggle('deep', deepMode);
+    e.currentTarget.textContent = deepMode ? 'leave the recursion' : 'enter the recursion';
+    e.currentTarget.setAttribute('aria-pressed', String(deepMode));
+    if (deepMode) { resize(); loop(); } else cancelAnimationFrame(raf);
+  };
+  $('#selflink').onclick = e => { e.preventDefault(); location.reload(); }; // see: recursion
+
+  // --- the tab title recurses along with the song ---
+  const syncStack = () => {
+    const t = v.currentTime || 0, d = v.duration || 180;
+    // the tab title also recurses: "recursion", "recursion recursion", ...
+    document.title = Array(1 + Math.round(depthFromTime(t, d)) % 6).fill('recursion').join(' ');
+  };
+  const depthFromTime = (t, d) => 1 + 7 * Math.sin(Math.PI * Math.min(1, t / d)) ** 1.5;
+  setInterval(syncStack, 400);
+
+  // --- the recursion: a video that contains itself ---
+  const resize = () => {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    c.width = innerWidth * dpr; c.height = innerHeight * dpr;
+  };
+  addEventListener('resize', () => deepMode && resize());
+
+  const drawCover = (w, h) => {
+    const vw = v.videoWidth || 1920, vh = v.videoHeight || 1080;
+    const s = Math.max(w / vw, h / vh);
+    ctx.drawImage(v, -vw * s / 2, -vh * s / 2, vw * s, vh * s);
+  };
+  const frame = (w, h) => {
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, Math.min(w, h) * .03); ctx.clip();
+    drawCover(w, h);
+    ctx.restore();
+    ctx.lineWidth = Math.max(1.5, w * .003);
+    ctx.strokeStyle = 'rgba(59,74,92,.55)';
+    ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, Math.min(w, h) * .03); ctx.stroke();
+  };
+  // base case at level 0; otherwise draw a room, then the same function inside it, smaller and turned
+  const room = (level, w, h) => {
+    if (level <= 0) return;
+    const alpha = Math.min(1, level);          // the deepest level fades in smoothly
+    ctx.save(); ctx.globalAlpha = alpha; frame(w, h); ctx.restore();
+    ctx.save();
+    ctx.translate((cx - .5) * w * .18, (cy - .5) * h * .18);
+    ctx.rotate((Math.sin(twist) * .22) + .05);
+    room(level - 1, w * .58, h * .58);
+    ctx.restore();
+  };
+  const loop = () => {
+    raf = requestAnimationFrame(loop);
+    depth += (targetDepth - depth) * .06;
+    cx += (tx - cx) * .05; cy += (ty - cy) * .05;
+    if (!reduce) twist += .006;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.translate(c.width / 2, c.height / 2);
+    room(depth + 1, c.width, c.height);
+  };
+  const move = (x, y) => { tx = x / innerWidth; ty = y / innerHeight; targetDepth = 1 + 7 * tx; };
+  addEventListener('pointermove', e => move(e.clientX, e.clientY));
+  addEventListener('pointerdown', e => move(e.clientX, e.clientY));
+  addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight') targetDepth = Math.min(8, targetDepth + 1);
+    if (e.key === 'ArrowLeft') targetDepth = Math.max(1, targetDepth - 1);
+    if (e.key === ' ') { e.preventDefault(); v.paused ? v.play() : v.pause(); }
+    if (e.key.toLowerCase() === 'd') $('#deep').click();
+  });
+})();
+</script>
+</body>
+</html>

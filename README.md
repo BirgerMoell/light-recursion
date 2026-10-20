@@ -1,0 +1,9 @@
+# recursion
+
+A looping, recursive music video. Open the page, press **enter the recursion**, and move your pointer:
+the video starts to contain itself, one level per step to the right.
+
+Live: https://birgermoell.github.io/light-recursion/
+
+- Visuals: a Droste tunnel of Julia sets with orbit-trap contours, rendered with WebGL shaders (Remotion).
+- Page: one recursive function (`room(level, size)`) draws the video inside itself on a canvas. Press the `</>` button to see it.
